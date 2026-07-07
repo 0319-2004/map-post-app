@@ -1,231 +1,212 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>みんなの地図投稿</title>
-<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
-<script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
-<style>
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; font-family: -apple-system, "Hiragino Sans", "Yu Gothic", sans-serif; }
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>みんなの地図 — Firebase × MapLibre</title>
 
-  #app { display: flex; flex-direction: column; height: 100%; }
+  <!-- MapLibre GL JS（地図） -->
+  <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
 
-  header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 16px; background: #1E88E5; color: #fff; flex: 0 0 auto;
-  }
-  header h1 { font-size: 16px; margin: 0; }
-  #authArea { display: flex; align-items: center; gap: 8px; }
-  #userPhoto { width: 28px; height: 28px; border-radius: 50%; display: none; }
-  #userName { font-size: 13px; display: none; }
-  button {
-    cursor: pointer; border: none; border-radius: 6px; padding: 8px 14px;
-    font-size: 13px; font-weight: 600;
-  }
-  #loginBtn { background: #fff; color: #1E88E5; }
-  #logoutBtn { background: rgba(255,255,255,0.2); color: #fff; display: none; }
-
-  main { position: relative; flex: 1 1 auto; }
-  #map { position: absolute; inset: 0; }
-
-  #panel {
-    position: absolute; left: 12px; bottom: 12px; z-index: 5;
-    background: #fff; border-radius: 10px; padding: 14px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.2); width: min(320px, calc(100% - 24px));
-  }
-  #panel h2 { font-size: 14px; margin: 0 0 8px; }
-  #panel p.hint { font-size: 12px; color: #666; margin: 0 0 10px; }
-  #pickedInfo { font-size: 12px; color: #1E88E5; margin-bottom: 8px; min-height: 16px; }
-  #postText {
-    width: 100%; resize: vertical; min-height: 60px; padding: 8px;
-    border: 1px solid #ccc; border-radius: 6px; font-size: 14px; margin-bottom: 8px;
-  }
-  #panel .row { display: flex; gap: 8px; }
-  #geoBtn { background: #f0f0f0; color: #333; flex: 1; }
-  #submitBtn { background: #1E88E5; color: #fff; flex: 1; }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-
-  #loginNotice {
-    position: absolute; left: 12px; bottom: 12px; z-index: 5;
-    background: #fff8e1; border: 1px solid #ffe082; border-radius: 10px;
-    padding: 12px 14px; font-size: 13px; color: #7a5c00;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-  }
-</style>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; }
+    #map { position: absolute; inset: 0; }
+    #bar {
+      position: fixed; top: 12px; left: 12px; right: 12px; z-index: 10;
+      display: flex; align-items: center; gap: 10px;
+      background: rgba(255,255,255,0.95); padding: 8px 12px;
+      border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    #bar .grow { flex: 1; }
+    #bar img { width: 28px; height: 28px; border-radius: 50%; vertical-align: middle; }
+    button { font-size: 14px; padding: 8px 14px; border: 0; border-radius: 8px; cursor: pointer; font-weight: bold; }
+    #loginBtn { background: #4285F4; color: #fff; }
+    #logoutBtn { background: #eee; color: #333; }
+    #panel {
+      position: fixed; left: 12px; bottom: 12px; z-index: 10; width: 320px; max-width: 92vw;
+      background: rgba(255,255,255,0.97); padding: 14px; border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+    }
+    #panel textarea { width: 100%; height: 60px; resize: vertical; padding: 8px; border: 1px solid #ccc; border-radius: 8px; font: inherit; }
+    #panel .row { display: flex; gap: 8px; margin-top: 8px; }
+    #geoBtn { background: #43A047; color: #fff; }
+    #postBtn { background: #E53935; color: #fff; flex: 1; }
+    #status { font-size: 12px; color: #555; margin-top: 8px; min-height: 16px; }
+    .hint { font-size: 12px; color: #666; }
+    .disabled { opacity: 0.5; pointer-events: none; }
+  </style>
 </head>
 <body>
-<div id="app">
-  <header>
-    <h1>みんなの地図投稿</h1>
-    <div id="authArea">
-      <img id="userPhoto" alt="" />
-      <span id="userName"></span>
-      <button id="loginBtn">Googleでログイン</button>
-      <button id="logoutBtn">ログアウト</button>
+  <div id="map"></div>
+
+  <div id="bar">
+    <div class="grow">
+      <span id="userInfo" class="hint">サインインすると投稿できます</span>
     </div>
-  </header>
+    <span class="hint">投稿数: <b id="count">0</b></span>
+    <button id="loginBtn">Googleでサインイン</button>
+    <button id="logoutBtn" style="display:none">サインアウト</button>
+  </div>
 
-  <main>
-    <div id="map"></div>
-
-    <div id="panel" style="display:none;">
-      <h2>投稿する</h2>
-      <p class="hint">地図をクリックするか「現在地を使う」で場所を選んでね</p>
-      <div id="pickedInfo">場所が選ばれていません</div>
-      <textarea id="postText" placeholder="ここに書いたことを投稿しよう"></textarea>
+  <div id="panel">
+    <div class="hint">① 地図をクリック or「現在地」で場所を選ぶ → ② 文章を書いて投稿</div>
+    <div id="form" class="disabled">
+      <textarea id="text" maxlength="500" placeholder="この場所についてひとこと…"></textarea>
       <div class="row">
-        <button id="geoBtn">現在地を使う</button>
-        <button id="submitBtn" disabled>投稿する</button>
+        <button id="geoBtn" type="button">現在地</button>
+        <button id="postBtn" type="button">投稿する</button>
       </div>
     </div>
+    <div id="status"></div>
+  </div>
 
-    <div id="loginNotice">
-      投稿するには、右上から Google でログインしてください。
-    </div>
-  </main>
-</div>
+  <script type="module">
+    // ===== Firebase（モジュラーSDK v12.15.0）=====
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+      from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+    import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp }
+      from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+    import { firebaseConfig } from "./firebase-config.js";
 
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
-  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
-    from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
-  import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, serverTimestamp }
-    from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
-  import { firebaseConfig } from "./firebase-config.js";
+    const app  = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db   = getFirestore(app);
+    const provider = new GoogleAuthProvider();
 
-  const app  = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-  const db   = getFirestore(app);
-
-  // ---- DOM要素 ----
-  const loginBtn    = document.getElementById('loginBtn');
-  const logoutBtn   = document.getElementById('logoutBtn');
-  const userPhoto   = document.getElementById('userPhoto');
-  const userName    = document.getElementById('userName');
-  const panel       = document.getElementById('panel');
-  const loginNotice = document.getElementById('loginNotice');
-  const pickedInfo  = document.getElementById('pickedInfo');
-  const postText    = document.getElementById('postText');
-  const geoBtn      = document.getElementById('geoBtn');
-  const submitBtn   = document.getElementById('submitBtn');
-
-  let currentUser = null;
-  let picked = null; // { lat, lng }
-  const markers = [];
-
-  // ---- 5-1. 地図（MapLibre + OpenStreetMap、APIキー不要） ----
-  const map = new maplibregl.Map({
-    container: 'map',
-    style: {
-      version: 8,
-      sources: { osm: { type: 'raster',
-        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-        tileSize: 256, attribution: '© OpenStreetMap contributors' } },
-      layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
-    },
-    center: [139.7038, 35.6580], zoom: 12
-  });
-  map.addControl(new maplibregl.NavigationControl(), 'top-right');
-
-  // ---- 5-2. 認証（Googleサインイン） ----
-  const provider = new GoogleAuthProvider();
-  loginBtn.onclick  = () => signInWithPopup(auth, provider);
-  logoutBtn.onclick = () => signOut(auth);
-
-  onAuthStateChanged(auth, (user) => {
-    currentUser = user;
-
-    if (user) {
-      loginBtn.style.display  = 'none';
-      logoutBtn.style.display = 'inline-block';
-      userPhoto.src = user.photoURL || '';
-      userPhoto.style.display = user.photoURL ? 'inline-block' : 'none';
-      userName.textContent = user.displayName || '';
-      userName.style.display = 'inline';
-      panel.style.display = 'block';
-      loginNotice.style.display = 'none';
-    } else {
-      loginBtn.style.display  = 'inline-block';
-      logoutBtn.style.display = 'none';
-      userPhoto.style.display = 'none';
-      userName.style.display = 'none';
-      panel.style.display = 'none';
-      loginNotice.style.display = 'block';
-    }
-    updateSubmitState();
-  });
-
-  // ---- 5-3. 場所を選ぶ（クリック＋現在地） ----
-  function setPick(lng, lat) {
-    picked = { lng, lat };
-    pickedInfo.textContent = `選択中の場所：緯度 ${lat.toFixed(5)} / 経度 ${lng.toFixed(5)}`;
-    updateSubmitState();
-  }
-
-  map.on('click', (e) => setPick(e.lngLat.lng, e.lngLat.lat));
-
-  geoBtn.onclick = () => {
-    if (!navigator.geolocation) {
-      alert('この端末では現在地を取得できません');
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setPick(pos.coords.longitude, pos.coords.latitude);
-        map.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 15 });
+    // ===== 地図（MapLibre + OpenStreetMapタイル。APIキー不要）=====
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: {
+        version: 8,
+        sources: {
+          osm: {
+            type: 'raster',
+            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            attribution: '© OpenStreetMap contributors'
+          }
+        },
+        layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
       },
-      () => alert('現在地を取得できませんでした')
-    );
-  };
-
-  function updateSubmitState() {
-    submitBtn.disabled = !(currentUser && picked && postText.value.trim().length > 0);
-  }
-  postText.addEventListener('input', updateSubmitState);
-
-  // ---- 5-4. 投稿する（Firestoreに書き込み） ----
-  submitBtn.onclick = async () => {
-    const text = postText.value.trim();
-    if (!currentUser || !picked || !text) return;
-
-    submitBtn.disabled = true;
-    try {
-      await addDoc(collection(db, 'posts'), {
-        uid: currentUser.uid,
-        name: currentUser.displayName,
-        text,
-        lat: picked.lat, lng: picked.lng,
-        createdAt: serverTimestamp()
-      });
-      postText.value = '';
-      picked = null;
-      pickedInfo.textContent = '場所が選ばれていません';
-    } catch (err) {
-      alert('投稿に失敗しました: ' + err.message);
-    } finally {
-      updateSubmitState();
-    }
-  };
-
-  // ---- 5-5. リアルタイム表示（onSnapshot） ----
-  const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'));
-  onSnapshot(q, (snap) => {
-    markers.forEach(m => m.remove());
-    markers.length = 0;
-
-    snap.forEach(doc => {
-      const p = doc.data();
-      if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
-      const marker = new maplibregl.Marker({ color: '#1E88E5' })
-        .setLngLat([p.lng, p.lat])
-        .setPopup(new maplibregl.Popup().setText(`${p.name}：${p.text}`))
-        .addTo(map);
-      markers.push(marker);
+      center: [139.7038, 35.6580], // 渋谷あたり
+      zoom: 12
     });
-  });
-</script>
+    map.addControl(new maplibregl.NavigationControl());
+
+    // ===== 画面部品 =====
+    const loginBtn  = document.getElementById('loginBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const userInfo  = document.getElementById('userInfo');
+    const formBox   = document.getElementById('form');
+    const textEl    = document.getElementById('text');
+    const geoBtn    = document.getElementById('geoBtn');
+    const postBtn   = document.getElementById('postBtn');
+    const statusEl  = document.getElementById('status');
+    const countEl   = document.getElementById('count');
+
+    let currentUser = null;
+    let picked = null;          // 選択中の投稿場所 {lng, lat}
+    let pickMarker = null;      // 選択中の仮ピン（赤）
+    const postMarkers = [];     // 表示中の投稿ピン（青）
+
+    // ===== 認証 =====
+    loginBtn.onclick  = () => signInWithPopup(auth, provider).catch(e => alert(e.message));
+    logoutBtn.onclick = () => signOut(auth);
+
+    onAuthStateChanged(auth, (user) => {
+      currentUser = user;
+      if (user) {
+        loginBtn.style.display = 'none';
+        logoutBtn.style.display = '';
+        const icon = user.photoURL ? `<img src="${user.photoURL}" alt="">` : '';
+        userInfo.innerHTML = `${icon} <b>${escapeHtml(user.displayName || 'ユーザー')}</b> でログイン中`;
+        formBox.classList.remove('disabled');
+      } else {
+        loginBtn.style.display = '';
+        logoutBtn.style.display = 'none';
+        userInfo.textContent = 'サインインすると投稿できます';
+        formBox.classList.add('disabled');
+      }
+    });
+
+    // ===== 場所を選ぶ（地図クリック or 現在地）=====
+    map.on('click', (e) => setPick(e.lngLat.lng, e.lngLat.lat));
+
+    geoBtn.onclick = () => {
+      if (!navigator.geolocation) return alert('この端末では現在地を使えません');
+      statusEl.textContent = '現在地を取得中…';
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setPick(pos.coords.longitude, pos.coords.latitude);
+          map.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 15 });
+        },
+        (err) => { statusEl.textContent = '現在地を取得できませんでした：' + err.message; }
+      );
+    };
+
+    function setPick(lng, lat) {
+      picked = { lng, lat };
+      if (pickMarker) pickMarker.remove();
+      pickMarker = new maplibregl.Marker({ color: '#E53935' }).setLngLat([lng, lat]).addTo(map);
+      statusEl.textContent = `場所を選択：${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    }
+
+    // ===== 投稿する（Firestoreに書き込み）=====
+    postBtn.onclick = async () => {
+      if (!currentUser) return alert('先にサインインしてください');
+      if (!picked)      return alert('地図をクリックするか「現在地」で場所を選んでください');
+      const text = textEl.value.trim();
+      if (!text)        return alert('ひとこと書いてください');
+      postBtn.disabled = true;
+      try {
+        await addDoc(collection(db, 'posts'), {
+          uid: currentUser.uid,
+          name: currentUser.displayName || '名無し',
+          photoURL: currentUser.photoURL || '',
+          text,
+          lat: picked.lat,
+          lng: picked.lng,
+          createdAt: serverTimestamp()
+        });
+        textEl.value = '';
+        if (pickMarker) { pickMarker.remove(); pickMarker = null; }
+        picked = null;
+        statusEl.textContent = '投稿しました！';
+      } catch (e) {
+        statusEl.textContent = '投稿に失敗：' + e.message;
+      } finally {
+        postBtn.disabled = false;
+      }
+    };
+
+    // ===== リアルタイム表示（onSnapshot）=====
+    const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'));
+    onSnapshot(q, (snap) => {
+      postMarkers.forEach(m => m.remove());
+      postMarkers.length = 0;
+      snap.forEach(docSnap => {
+        const p = docSnap.data();
+        if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
+        const popup = new maplibregl.Popup({ offset: 16 }).setHTML(
+          `<strong>${escapeHtml(p.name)}</strong><br>${escapeHtml(p.text)}`
+        );
+        const marker = new maplibregl.Marker({ color: '#1E88E5' })
+          .setLngLat([p.lng, p.lat]).setPopup(popup).addTo(map);
+        postMarkers.push(marker);
+      });
+      countEl.textContent = snap.size;
+    }, (err) => {
+      statusEl.textContent = '読み込みエラー：' + err.message + '（ルール未設定かも）';
+    });
+
+    // XSS対策：投稿文をそのままHTMLに入れない
+    function escapeHtml(s){
+      return String(s).replace(/[&<>"']/g, c =>
+        ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+  </script>
 </body>
 </html>
